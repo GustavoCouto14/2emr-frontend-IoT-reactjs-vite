@@ -1,5 +1,4 @@
 // src/components/Toast.jsx
-import React from 'react';
 import { XMarkIcon, CheckCircleIcon, ExclamationCircleIcon } from '@heroicons/react/24/outline';
 
 const Toast = ({ message, onClose, type }) => {

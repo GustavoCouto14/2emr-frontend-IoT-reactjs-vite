@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Chart from 'chart.js/auto';
 
 const SensorDataChart = () => {
@@ -7,10 +7,10 @@ const SensorDataChart = () => {
   const [humidityChartInstance, setHumidityChartInstance] = useState(null); // Instância do gráfico de umidade
   const [isLoading, setIsLoading] = useState(true); // Estado para controlar o carregamento inicial
   const [token, setToken] = useState(''); // Estado para armazenar o token JWT
+  const [isPaused, setIsPaused] = useState(false); // Estado para controlar se os serviços estão pausados
 
   // Função para obter o token JWT
   const getToken = () => {
-    // Aqui você pode buscar o token do localStorage, cookies, ou outro lugar onde foi armazenado após o login
     const storedToken = localStorage.getItem('token'); 
     setToken(storedToken);
   };
@@ -22,25 +22,32 @@ const SensorDataChart = () => {
       temperatura: Math.random() * 50, // Gerando temperatura aleatória
       umidade: Math.random() * 100 // Gerando umidade aleatória
     };
+
     try {
-        const response = await fetch('http://localhost:3000/dados-sensores', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}` // Adicione o token JWT aqui se a rota estiver protegida
-            },
-            body: JSON.stringify(dadosSensor)
-        });
+      const response = await fetch('http://localhost:3000/dados-sensores', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`, // Incluindo o token JWT diretamente do localStorage
+        },
+        body: JSON.stringify(dadosSensor)
+      });
 
-        if (!response.ok) {
-          throw new Error('Erro ao enviar dados do sensor: ' + response.statusText);
+      const data = await response.json();
+
+      if (response.ok) {
+        console.log('Dados enviados com sucesso:', data);
+      } else {
+        if (data.message) {
+          console.log('Erro do servidor:', data.message);
+        } else {
+          console.error('Erro ao enviar dados:', response.statusText);
         }
-  
+      }
     } catch (error) {
-        console.error('Erro ao enviar dados do sensor:', error);
+      console.error('Erro ao enviar dados do sensor:', error);
     }
-};
-
+  };
 
   // Busca inicial de dados do backend
   useEffect(() => {
@@ -57,14 +64,14 @@ const SensorDataChart = () => {
         }
         const data = await response.json();
         setSensorData(data);
-        setIsLoading(false); // Marcamos que a busca de dados terminou
+        setIsLoading(false);
       } catch (error) {
         console.error('Erro ao buscar dados:', error);
       }
     };
 
     if (token) {
-      fetchData(); // Chama fetchData somente se o token existir
+      fetchData();
     }
   }, [token]);
 
@@ -77,19 +84,21 @@ const SensorDataChart = () => {
   useEffect(() => {
     const updateChartData = async () => {
       try {
-        await sendSensorData(); // Enviar os dados do sensor a cada 10 segundos
+        if (!isPaused) {
+          await sendSensorData();
 
-        const response = await fetch('http://localhost:3000/dados-sensores', {
-          headers: {
-            'Authorization': `Bearer ${token}`, // Adicionando o token JWT ao cabeçalho
-          },
-        });
+          const response = await fetch('http://localhost:3000/dados-sensores', {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          });
 
-        if (!response.ok) {
-          throw new Error('Erro ao buscar dados: ' + response.statusText);
+          if (!response.ok) {
+            throw new Error('Erro ao buscar dados: ' + response.statusText);
+          }
+          const data = await response.json();
+          setSensorData(data);
         }
-        const data = await response.json();
-        setSensorData(data);
       } catch (error) {
         console.error('Erro ao buscar ou atualizar dados:', error);
       }
@@ -99,84 +108,82 @@ const SensorDataChart = () => {
       const interval = setInterval(updateChartData, 10000); // Intervalo de 10 segundos
       return () => clearInterval(interval); // Limpar intervalo ao desmontar o componente
     }
-  }, [token]);
+  }, [token, isPaused]); // Adicionando isPaused às dependências
 
   // Renderização dos gráficos
   useEffect(() => {
-    if (!isLoading) { // Renderizar gráficos somente após o carregamento inicial
+    if (!isLoading) {
       if (tempChartInstance) {
-        tempChartInstance.destroy(); // Destruir o gráfico existente antes de criar um novo
+        tempChartInstance.destroy();
       }
       if (humidityChartInstance) {
-        humidityChartInstance.destroy(); // Destruir o gráfico existente antes de criar um novo
+        humidityChartInstance.destroy();
       }
 
       const tempCtx = document.getElementById('temp-chart');
       const humidityCtx = document.getElementById('humidity-chart');
 
-      // Criar novo gráfico de temperatura
-      const newTempChartInstance = new Chart(tempCtx, {
-        type: 'line',
-        data: {
-          labels: sensorData.map(entry => {
-            const timestamp = new Date(entry.timestamp);
-            timestamp.setHours(timestamp.getHours() - 3); // Ajuste de fuso horário
-            return timestamp.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-          }),
-          datasets: [
-            {
-              label: 'Temperatura',
-              data: sensorData.map(entry => entry.temperatura),
-              borderColor: 'rgb(227 15 89)',
-            }
-          ]
-        },
-        options: {
-          scales: {
-            y: {
-              beginAtZero: true
-            }
-          }
-        }
-      });
-
-      // Criar novo gráfico de umidade
-      const newHumidityChartInstance = new Chart(humidityCtx, {
-        type: 'line',
-        data: {
-          labels: sensorData.map(entry => {
-            const timestamp = new Date(entry.timestamp);
-            timestamp.setHours(timestamp.getHours() - 3); // Ajuste de fuso horário
-            return timestamp.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-          }),
-          datasets: [
-            {
-              label: 'Umidade',
-              data: sensorData.map(entry => entry.umidade),
-              borderColor: 'rgb(54, 162, 235)',
-            }
-          ]
-        },
-        options: {
-          scales: {
-            y: {
-              beginAtZero: true
+      if (tempCtx && humidityCtx) {
+        const newTempChartInstance = new Chart(tempCtx, {
+          type: 'line',
+          data: {
+            labels: Array.isArray(sensorData) ? sensorData.map(entry => {
+              const timestamp = new Date(entry.timestamp);
+              timestamp.setHours(timestamp.getHours() - 3);
+              return timestamp.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+            }) : [],
+            datasets: [
+              {
+                label: 'Temperatura',
+                data: Array.isArray(sensorData) ? sensorData.map(entry => entry.temperatura) : [],
+                borderColor: 'rgb(227 15 89)',
+              }
+            ]
+          },
+          options: {
+            scales: {
+              y: {
+                beginAtZero: true
+              }
             }
           }
-        }
-      });
+        });
 
-      setTempChartInstance(newTempChartInstance); // Armazenar nova instância do gráfico de temperatura
-      setHumidityChartInstance(newHumidityChartInstance); // Armazenar nova instância do gráfico de umidade
+        const newHumidityChartInstance = new Chart(humidityCtx, {
+          type: 'line',
+          data: {
+            labels: Array.isArray(sensorData) ? sensorData.map(entry => {
+              const timestamp = new Date(entry.timestamp);
+              timestamp.setHours(timestamp.getHours() - 3);
+              return timestamp.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+            }) : [],
+            datasets: [
+              {
+                label: 'Umidade',
+                data: Array.isArray(sensorData) ? sensorData.map(entry => entry.umidade) : [],
+                borderColor: 'rgb(54, 162, 235)',
+              }
+            ]
+          },
+          options: {
+            scales: {
+              y: {
+                beginAtZero: true
+              }
+            }
+          }
+        });
+
+        setTempChartInstance(newTempChartInstance);
+        setHumidityChartInstance(newHumidityChartInstance);
+      }
     }
   }, [sensorData, isLoading]);
-
-  return (
+return (
     <div>
       <canvas id="temp-chart" width="600" height="200"></canvas>
       <canvas id="humidity-chart" width="600" height="200"></canvas>
     </div>
   );
 };
-
 export default SensorDataChart;
